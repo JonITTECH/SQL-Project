@@ -1,149 +1,132 @@
-USE sqlproject; 
+USE sqlproject;
 
-SELECT * FROM comments;
-SELECT * FROM badges;
-SELECT * FROM courses;
-SELECT * FROM description;
-SELECT * FROM locations; 
+CREATE TABLE consolidated_data AS
+SELECT
+    schools.school_id AS school_id,
+    schools.school AS school_name,
+    schools_badges.badges_id AS badges_id
+##    badges_name.badges_name AS badges_name,
+FROM
+    schools
+JOIN
+	schools_badges ON schools_badges.school_id=schools.school_id;
 
--- COMMENTS create a PK
-SELECT * FROM comments;
-describe comments;
-ALTER TABLE comments ADD PRIMARY KEY (id);
-ALTER TABLE comments RENAME COLUMN id TO comments_id;
-SELECT * FROM comments;
+CREATE TABLE consolidated_data_2
+SELECT
+    consolidated_data.school_id AS school_id,
+    consolidated_data.school_name AS school_name,
+    consolidated_data.badges_id AS badges_id,
+    badges_name.badges_name AS badges_name
+FROM
+    consolidated_data 
+JOIN
+    badges_name ON consolidated_data.badges_id=badges_name.badges_id;
 
--- BADGES
-SELECT * FROM badges;
-describe badges;
-ALTER TABLE badges
-ADD badges_id INT PRIMARY KEY AUTO_INCREMENT;
-SELECT * FROM badges; 
-ALTER TABLE badges DROP COLUMN school;
+SELECT * FROM consolidated_data_2;
 
--- DESCRIPTIVE ANALYSIS COMPARING name vs. keyword
-SELECT DISTINCT keyword FROM schools_badges;
--- Volver aquí luego porque crearemos esta tabla: schools_badges
-SELECT DISTINCT name FROM badges;
-SELECT DISTINCT keyword, name FROM badges;
-SELECT * from badges;
+DROP TABLE consolidated_data;
 
--- COURSES:
-SELECT * FROM courses;
-describe courses;
-ALTER TABLE courses
-ADD course_id INT PRIMARY KEY AUTO_INCREMENT;
-SELECT * FROM courses;
-describe courses;
+RENAME TABLE consolidated_data_2 TO consolidated_data;
 
--- Create a table with schools & school_id per school as PK 
-CREATE TABLE schools (school text, school_id bigint); 
-INSERT INTO schools (school, school_id)
-SELECT DISTINCT school, school_id
-FROM courses;
-ALTER TABLE schools ADD PRIMARY KEY(school_id);
-
--- DROP schools FROM courses
-ALTER TABLE courses DROP COLUMN school;
-SELECT * FROM courses;
-##ALTER TABLE courses DROP COLUMN course_format;
--- Agregar columnas nuevas
-##ALTER TABLE courses
-##ADD COLUMN course_name VARCHAR(50),
-##ADD COLUMN course_format VARCHAR(50);
-##SET SQL_SAFE_UPDATES = 0;
--- Actualizar las nuevas columnas con los valores divididos
-#UPDATE courses
-#SET course_name = SUBSTRING_INDEX(courses, ' -', 1),
-#    course_format = SUBSTRING_INDEX(courses, ' -', -1);
--- Eliminar la columna original si es necesario
-ALTER TABLE courses
-DROP COLUMN courses;
-SELECT * FROM courses;
--- No lo hago por si acaso, vemos más adelante
-
--- DESCRIPTION:
-SELECT * FROM description;
-
--- LOCATIONS:
+ALTER TABLE locations RENAME COLUMN `country.name` TO country_name;
+ALTER TABLE locations RENAME COLUMN `city.name` TO city_name;
+ALTER TABLE locations RENAME COLUMN `state.name` TO state_name;
 SELECT * FROM locations;
-describe locations;
-ALTER TABLE locations ADD PRIMARY KEY (id);
-SELECT * FROM locations;
-ALTER TABLE locations RENAME COLUMN id TO locations_id;
-ALTER TABLE locations DROP COLUMN description;
-ALTER TABLE locations DROP COLUMN `state.keyword`;
-ALTER TABLE locations DROP COLUMN `city.keyword`;
 
-ALTER TABLE locations
-DROP COLUMN `city.id`, DROP COLUMN `state.id`, DROP COLUMN `country.id`, DROP COLUMN `state.abbrev`, DROP COLUMN `country.abbrev`;
-SELECT * FROM badges;
-select * from schools;
-SELECT schools.school_id, schools.school, badges.badges_id 
-FROM schools 
-LEFT JOIN badges ON badges.school_id = schools.school_id;
+ALTER TABLE consolidated_data
+ADD COLUMN country TEXT, ADD COLUMN city TEXT,ADD COLUMN state TEXT; 
+SET SQL_SAFE_UPDATES = 0;
 
-ALTER TABLE badges RENAME TO schools_badges;
-SELECT * FROM schools_badges;
+UPDATE consolidated_data
+JOIN locations
+ON consolidated_data.school_id = locations.school_id
+SET consolidated_data.country = locations.country_name,
+    consolidated_data.city = locations.city_name,
+    consolidated_data.state = locations.state_name;
 
--- create a table for the badges names:
-CREATE TABLE badges_name (badges_name text) ;
-INSERT INTO badges_name (badges_name)
-SELECT DISTINCT schools_badges.name
-FROM schools_badges;
-ALTER TABLE badges_name
-ADD badges_id INT PRIMARY KEY AUTO_INCREMENT;
-SELECT * FROM badges_name;
-SELECT * FROM schools_badges;
-ALTER TABLE schools_badges 
-DROP COLUMN badges_id, DROP COLUMN description, DROP COLUMN keyword; 
-SELECT * FROM schools_badges;
+SELECT * FROM consolidated_data;
 
-#UPDATE schools_badges
-#SET schools_badges.name = badges_name.badges_id
-#FROM badges_name
-#INNER JOIN badges_name ON badges_name.name = schools_badges.name;
+CREATE TABLE school_reviews
+SELECT
+    school_id,
+    AVG(overallScore) AS overall_review,
+	AVG(curriculum) AS overall_cv,
+	AVG(jobSupport) AS overall_job
+FROM comments
+GROUP BY school_id;
 
-ALTER TABLE schools_badges
-ADD COLUMN badges_id INT;
+CREATE TABLE course_reviews
+SELECT
+    school_id AS school_id,
+    hostProgramName AS course,
+    AVG(overallScore) AS overall_review,
+	AVG(curriculum) AS overall_cv,
+	AVG(jobSupport) AS overall_job
+FROM comments
+GROUP BY
+    school_id,
+    hostProgramName;
+    
+ALTER TABLE consolidated_data
+ADD COLUMN overall_review double, ADD COLUMN overall_cv double,ADD COLUMN overall_job double; 
 
-SELECT * FROM badges_name;
-SELECT * FROM schools_badges;
+UPDATE consolidated_data
+JOIN school_reviews
+ON consolidated_data.school_id = school_reviews.school_id
+SET consolidated_data.overall_review = school_reviews.overall_review, consolidated_data.overall_cv = school_reviews.overall_cv, consolidated_data.overall_job = school_reviews.overall_job;
 
-UPDATE schools_badges
-JOIN badges_name ON schools_badges.name = badges_name.badges_name
-SET schools_badges.badges_id = badges_name.badges_id;
+ALTER TABLE consolidated_data 
+ADD COLUMN flag_online int, 
+ADD COLUMN flag_flexible int, 
+ADD COLUMN flag_job int, 
+ADD COLUMN flag_outcomes int, 
+ADD COLUMN flag_bill int, 
+ADD COLUMN flag_vet int;
 
-ALTER TABLE schools
-ADD COLUMN school_description TEXT;
-describe schools;
-describe description;
+UPDATE consolidated_data
+SET flag_online = CASE WHEN badges_id = 1 THEN 1 ELSE 0 END, 
+flag_flexible = CASE WHEN badges_id = 2 THEN 1 ELSE 0 END,
+flag_job = CASE WHEN badges_id = 3 THEN 1 ELSE 0 END,
+flag_outcomes = CASE WHEN badges_id = 4 THEN 1 ELSE 0 END,
+flag_bill= CASE WHEN badges_id = 5 THEN 1 ELSE 0 END,
+flag_vet = CASE WHEN badges_id = 6 THEN 1 ELSE 0 END;
 
-UPDATE schools
-JOIN description
-ON schools.school = description.name
-SET schools.school_description = description.description ;
-select * from schools;
+ALTER TABLE consolidated_data 
+DROP COLUMN badges_id, 
+DROP COLUMN badges_name;
 
-select * from description;
+CREATE TABLE consolidated_data_2 AS
+SELECT
+    school_id,
+    SUM(flag_online) AS flag_online_school,
+	SUM(flag_flexible) AS flag_flexible_school,
+	SUM(flag_job) AS flag_job_school,
+	SUM(flag_outcomes) AS flag_outcomes_school,
+	SUM(flag_bill) AS flag_bill_school,
+	SUM(flag_vet) AS flag_vet_school
+FROM
+    consolidated_data
+GROUP BY
+    school_id;
 
-UPDATE description
-SET name = LOWER(REPLACE(name, ' ', '-'));
-select * from description; 
-UPDATE description
-SET name = REPLACE(name, '-&-', ' ');
+ALTER TABLE consolidated_data 
+ADD COLUMN flag_online_school decimal, 
+ADD COLUMN flag_flexible_school decimal, 
+ADD COLUMN flag_job_school decimal, 
+ADD COLUMN flag_outcomes_school decimal, 
+ADD COLUMN flag_bill_school decimal, 
+ADD COLUMN flag_vet_school decimal;
 
-DROP TABLE descriptions;
+UPDATE consolidated_data
+JOIN consolidated_data_2
+ON consolidated_data.school_id = consolidated_data_2.school_id
+SET 
+    consolidated_data.flag_online_school = consolidated_data_2.flag_online_school,
+    consolidated_data.flag_flexible_school = consolidated_data_2.flag_flexible_school,
+    consolidated_data.flag_job_school = consolidated_data_2.flag_job_school,
+    consolidated_data.flag_outcomes_school = consolidated_data_2.flag_outcomes_school,
+    consolidated_data.flag_bill_school = consolidated_data_2.flag_bill_school,
+    consolidated_data.flag_vet_school = consolidated_data_2.flag_vet_school;
 
-ALTER TABLE comments
-ADD COLUMN school_id BIGINT;
+select * from consolidated_data;
 
-UPDATE comments
-JOIN schools
-ON schools.school = comments.school
-SET comments.school_id = schools.school_id ;
-
-ALTER TABLE comments 
-DROP COLUMN school;
-
-SELECT * FROM comments;
